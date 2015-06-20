@@ -11,106 +11,137 @@ import Foundation
 
 
 class InterfaceController: WKInterfaceController, AlertControllerDelegate {
+    //allows for digital crown control
     @IBOutlet var scroller : WKInterfacePicker!
     
+    /* Paddles & Paddle Control */
+    //space above paddles; grows/shrinks according to scroller
     @IBOutlet var spacer : WKInterfaceGroup!
+    @IBOutlet var enemySpacer : WKInterfaceGroup!
+    //user and enemy paddle representations
     @IBOutlet var paddle : WKInterfaceButton!
     @IBOutlet var enemyPaddle : WKInterfaceButton!
-    @IBOutlet var enemySpacer : WKInterfaceGroup!
-    let PaddleSpacer = (center : 0.4 as CGFloat, top : 0 as CGFloat, bottom : 0.8 as CGFloat)
+    //size of paddle
     let PaddleHeight = 30 as CGFloat
     
+    /* Ball & Ball Control */
+    //ball representation
     @IBOutlet var ball   : WKInterfaceButton!
+    //move ball in x and y directions
     @IBOutlet var verticalBallSpacer : WKInterfaceGroup!
     @IBOutlet var horizontalBallSpacer : WKInterfaceGroup!
-    let CanvasBounds = (top : 0 as CGFloat, left : 0 as CGFloat, bottom : 135 as CGFloat, right : 111 as CGFloat)
+    //size of ball
     let BallHeight = 10 as CGFloat
     
+    //size of 38mm canvas
+    let CanvasBounds = (top : 0 as CGFloat, left : 0 as CGFloat, bottom : 135 as CGFloat, right : 111 as CGFloat)
+    
+    //is enemy paddle waiting?
     var enemyPlayerWaiting : Bool = false
     
-    var ballLocation = (x : 0 as CGFloat, y: 0 as CGFloat)
+    //whose turn is it?
     var playerTurn = Player.A
+    
+    //current position of paddles
     var paddlePosition : CGFloat = 0
     var enemyPaddlePosition : CGFloat = 0
+    
+    //current position of ball
+    var ballLocation = (x : 0 as CGFloat, y: 0 as CGFloat)
+    
+    //current score
     var score = [Player.A : 0, Player.B : 0]
-    
-    var goalFound : CGFloat? = nil
-    
-    @IBAction func userDidScroll(value : Int) {
-        delay(0) {
-            self.paddlePosition = (CGFloat(value)/100)*115
-            self.spacer.setHeight(self.paddlePosition)
-        }
-    }
     
     override func awakeWithContext(context: AnyObject?) {
         super.awakeWithContext(context)
                 
-        // Configure interface objects here.
+        //allows for scrolling paddle, 1-100% scrolled
         var pickerItems: [WKPickerItem] = []
         for _ in 1...100 {
             pickerItems.append(WKPickerItem())
         }
         self.scroller.setItems(pickerItems)
         
+        //start round with random ball direction
         self.startRound(CGFloat.random(min: 1, max: 3))
+        
+        //start moving enemy player around
         self.startEnemyPlayer()
     }
+    
+    //moves paddle when the user scrolls digital crown
+    @IBAction func userDidScroll(value : Int) {
+        //set paddle position to 1-100% of available space
+        self.paddlePosition = (CGFloat(value)/100)*(CanvasBounds.bottom - PaddleHeight)
+        self.spacer.setHeight(self.paddlePosition)
+    }
 
+    //starts a round of pong
     func startRound(slope : CGFloat = 3) {
-        self.enemyPlayerWaiting = true
-        self.startEnemyPlayer()
+        self.enemyPlayerWaiting = true //enemy always goes first, so wait
+        self.startEnemyPlayer()        //move enemy around in the meantime
 
+        //move the ball at passed slope
         moveBallAtSlope(slope) {
+            //get slope ball should be returned at if it was hit
             if let slope = self.wasBallHit() {
-                //ball was hit
-                
                 //move ball at new slope
                 self.startRound(slope)
-            } else {
-                //ball was missed, reset ball
+            }
+            //ball was missed, start new round or gameover
+            else {
+                //play sound, reset the board
                 WKInterfaceDevice().playHaptic(WKHapticType.Failure)
                 self.resetBoard()
                 
-                //Player A wins!
+                //player A wins!
                 if self.score[Player.A] == 4 && self.playerTurn == Player.B {
+                    //present an alert, ask user to play again
                     self.presentAlertControllerWithTitle("Whoops!", message: "Watch wins!", preferredStyle: WKAlertControllerStyle.ActionSheet, actions: [WKAlertAction(title: "Play Again", style: WKAlertActionStyle.Default, handler: {
+                        //reset the score, start new round
                         delay(1) {
                             self.score = [Player.A : 0, Player.B : 0]
                             self.startRound(CGFloat.random(min: 1, max: 3))
                         }
                     })])
                 }
-                //Player B wins!
+                //player B wins!
                 else if self.score[Player.B] == 4 && self.playerTurn == Player.A {
+                    //present an alert, ask user to play again
                     self.presentAlertControllerWithTitle("Cogratulations!", message: "You win!", preferredStyle: WKAlertControllerStyle.ActionSheet, actions: [WKAlertAction(title: "Play Again", style: WKAlertActionStyle.Default, handler: {
+                        //reset the score, start new round
                         delay(1) {
                             self.score = [Player.A : 0, Player.B : 0]
                             self.startRound(CGFloat.random(min: 1, max: 3))
                         }
                     })])
                 }
-                //Else keep going
+                //no one wins yet, start new round
                 else {
                     if self.playerTurn == Player.A {
+                        //update score, show user interstitial alert
                         self.score[Player.B] = self.score[Player.B]! + 1
                         self.presentControllerWithName("AlertController", context: ["delegate" : self, "text" : "Point!\n\(self.score[Player.A]!)-\(self.score[Player.B]!)", "positive" : true])
                     } else {
+                        //update score, show user interstitial alert
                         self.score[Player.A] = self.score[Player.A]! + 1
                         self.presentControllerWithName("AlertController", context: ["delegate" : self, "text" : "Ouch!\n\(self.score[Player.A]!)-\(self.score[Player.B]!)", "positive" : false])
                     }
+                    
+                    //computer always starts round
                     self.playerTurn = Player.A
                 }
             }
         }
     }
     
+    //move ball at slope; recurses until board crossed
     func moveBallAtSlope(slope : CGFloat, completion: (() -> Void)?) {
         //calculate next point
         var nextX = self.playerTurn == Player.A ? CanvasBounds.right : CanvasBounds.left
         var nextY = ballLocation.y - slope*(ballLocation.x - nextX)
         
-        //guard against sides
+        //guard against boundaries
         if nextY > CanvasBounds.bottom || nextY < CanvasBounds.top {
             nextY = nextY > CanvasBounds.bottom ? CanvasBounds.bottom : CanvasBounds.top
             nextX = (slope*ballLocation.x - (ballLocation.y - nextY))/slope
@@ -122,7 +153,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         let duration = NSTimeInterval(distance(pointA, pointB: pointB)/100)
         
         //move the ball to our new point
-        self.moveBallToPoint(nextX, y: nextY, time: duration)
+        self.moveBallToPoint(CGPoint(x: nextX, y: nextY), time: duration)
         
         //if we're headed towards the enemy goal, move enemy
         if self.playerTurn == Player.B && (nextX == self.CanvasBounds.right || nextX ==  self.CanvasBounds.left) {
@@ -141,7 +172,8 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
                 guard completion != nil else {
                     return
                 }
-
+                
+                //completion handler
                 completion!()
             }
                 
@@ -152,10 +184,11 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         }
     }
     
-    func moveBallToPoint(x: CGFloat, y: CGFloat, time : NSTimeInterval) {
+    //moves ball to a given point, x,y
+    func moveBallToPoint(point : CGPoint, time : NSTimeInterval) {
         self.animateWithDuration(time, animations: { () -> Void in
-            self.horizontalBallSpacer.setWidth(x)
-            self.verticalBallSpacer.setHeight(y)
+            self.horizontalBallSpacer.setWidth(point.x)
+            self.verticalBallSpacer.setHeight(point.y)
         })
     }
     
@@ -179,31 +212,36 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
     }
     
     func startEnemyPlayer() {
-        //first enemy paddle move to center
         delay(0) {
+            //first enemy paddle move to center
             let paddleAtCenter = (self.CanvasBounds.bottom/2) - self.PaddleHeight/2
             self.animateWithDuration(1, animations: {
                 self.enemySpacer.setHeight(self.enemyPaddlePosition)
             })
             self.enemyPaddlePosition = paddleAtCenter
             
-            //then move it around center
+            //then shuffle it around the center
             func shuffle() {
-                if self.enemyPlayerWaiting {
-                    let time = Double.random(min: 0.5, max: 1.5)
+                if self.enemyPlayerWaiting { //only continue while we're supposed to be waiting, else exit immediately
+                    let time = Double.random(min: 0.5, max: 1.5) //pick a random speed
                     delay(time) {
-                        if self.enemyPlayerWaiting {
-                            let destination = paddleAtCenter - CGFloat.random(min: -10, max: 50)
+                        //moves down (most of the time)
+                        if self.enemyPlayerWaiting { //^^
+                            let destination = paddleAtCenter - CGFloat.random(min: -10, max: 50) //pick a random destination
+                            
+                            //move to random destination at random speed
                             self.animateWithDuration(time, animations: {
                                 self.enemySpacer.setHeight(destination)
                             })
                             
+                            //update our tracker
                             self.enemyPaddlePosition = destination
                         } else {
                             return
                         }
                         
-                        if self.enemyPlayerWaiting {
+                        //moves up (most of the time)
+                        if self.enemyPlayerWaiting { //^^
                             let time = Double.random(min: 0.5, max: 1.5)
                             delay(time) {
                                 if self.enemyPlayerWaiting {
@@ -217,6 +255,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
                                     return
                                 }
                                 
+                                //begin cycle again (continues until we're not supposed to be waiting)
                                 shuffle()
                             }
                         } else {
@@ -228,24 +267,31 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
                 }
             }
             
+            //begin shuffle
             shuffle()
         }
     }
     
+    //moves enemy paddle towards the goal spot, limited by speed of ball
     func moveEnemyToGoal(destination : CGFloat, time : NSTimeInterval) {
         let pointA = CGPointMake(destination, 0)
         let pointB = CGPointMake(enemyPaddlePosition, 0)
-        let duration = NSTimeInterval(distance(pointA, pointB: pointB)/100)
+        let duration = NSTimeInterval(distance(pointA, pointB: pointB)/100) //limits to speed of ball
         
+        //animate to new point
         self.animateWithDuration(duration, animations: {
             self.enemySpacer.setHeight(destination)
         })
+        
+        //update our position after animation
         delay(duration) {
             self.enemyPaddlePosition = destination
         }
     }
     
+    //reset board state
     func resetBoard() {
+        //reset all positions and locations to 0 (except user paddle position)
         self.enemyPlayerWaiting = false
         self.ballLocation = (x: 0, y: 0)
         self.enemyPaddlePosition = 0
@@ -255,6 +301,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         self.enemySpacer.setRelativeHeight(0, withAdjustment: 0)
     }
     
+    //called when alert dismisses, starts new round after 1s delay
     func alertControllerWillDismiss() {
         dispatch_async(dispatch_get_main_queue()) {
             delay(1) {
@@ -263,15 +310,18 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         }
     }
     
+    //calculates distance from pointA to pointB
     func distance(pointA : CGPoint, pointB : CGPoint) -> CGFloat {
         return sqrt(pow(pointA.x - pointB.x, 2) + pow(pointA.y - pointB.y, 2))
     }
 }
 
+//Two players
 enum Player {
     case A, B
 }
 
+//helper for GCD delay
 func delay(delay:Double, closure:()->()) {
     dispatch_after(
         dispatch_time(
@@ -281,12 +331,7 @@ func delay(delay:Double, closure:()->()) {
         dispatch_get_main_queue(), closure)
 }
 
-extension CGFloat {
-    func isPositive() -> Bool {
-        return self >= 0
-    }
-}
-
+//generates random numbers
 public extension Double {
     public static func random() -> Double {
         return Double(arc4random()) / 0xFFFFFFFF
