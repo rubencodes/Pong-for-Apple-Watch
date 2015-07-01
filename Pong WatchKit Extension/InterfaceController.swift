@@ -152,16 +152,17 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         let pointB = CGPointMake(ballLocation.x, ballLocation.y)
         let duration = NSTimeInterval(distance(pointA, pointB: pointB)/100)
         
-        //move the ball to our new point
-        self.moveBallToPoint(CGPoint(x: nextX, y: nextY), time: duration)
-        
-        //if we're headed towards the enemy goal, move enemy
+        //if we're headed towards the enemy goal, start to move enemy
         if self.playerTurn == Player.B && (nextX == self.CanvasBounds.right || nextX ==  self.CanvasBounds.left) {
             self.enemyPlayerWaiting = false
             self.moveEnemyToGoal(nextY, time: duration)
         }
         
-        delay(duration) {
+        //move the ball to our new point
+        self.animateWithDuration(duration, animations: { () -> Void in
+            self.horizontalBallSpacer.setWidth(nextX)
+            self.verticalBallSpacer.setHeight(nextY)
+        }) {
             //update the ball location
             self.ballLocation = (x: nextX, y: nextY)
             
@@ -174,7 +175,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
                 }
                 
                 //completion handler
-                completion!()
+                completion?()
             }
                 
             //else keep moving ball
@@ -182,14 +183,6 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
                 self.moveBallAtSlope(-slope, completion: completion)
             }
         }
-    }
-    
-    //moves ball to a given point, x,y
-    func moveBallToPoint(point : CGPoint, time : NSTimeInterval) {
-        self.animateWithDuration(time, animations: { () -> Void in
-            self.horizontalBallSpacer.setWidth(point.x)
-            self.verticalBallSpacer.setHeight(point.y)
-        })
     }
     
     //determines if ball was hit; returns angle to fire back if yes, nil if no
@@ -217,58 +210,47 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
             let paddleAtCenter = (self.CanvasBounds.bottom/2) - self.PaddleHeight/2
             self.animateWithDuration(1, animations: {
                 self.enemySpacer.setHeight(self.enemyPaddlePosition)
-            })
-            self.enemyPaddlePosition = paddleAtCenter
-            
-            //then shuffle it around the center
-            func shuffle() {
-                if self.enemyPlayerWaiting { //only continue while we're supposed to be waiting, else exit immediately
-                    let time = Double.random(min: 0.5, max: 1.5) //pick a random speed
-                    delay(time) {
-                        //moves down (most of the time)
-                        if self.enemyPlayerWaiting { //^^
-                            let destination = paddleAtCenter - CGFloat.random(min: -10, max: 50) //pick a random destination
-                            
-                            //move to random destination at random speed
-                            self.animateWithDuration(time, animations: {
-                                self.enemySpacer.setHeight(destination)
-                            })
-                            
+            }) {
+                //enemy is moved to center
+                self.enemyPaddlePosition = paddleAtCenter
+                
+                enum Direction {
+                    case Up, Down
+                }
+                
+                //helper for shuffling it around the center
+                func shuffle(direction : Direction) {
+                    if self.enemyPlayerWaiting { //only continue while we're supposed to be waiting, else exit immediately
+                        //pick a random destination, either up or down
+                        let destination = direction == Direction.Up
+                            ? paddleAtCenter - CGFloat.random(min: -10, max: 50)
+                            : paddleAtCenter + CGFloat.random(min: -10, max: 50)
+                        
+                        //pick a random speed
+                        let time = Double.random(min: 0.5, max: 1.5)
+                        
+                        //move to random destination at random speed
+                        self.animateWithDuration(time, animations: {
+                            self.enemySpacer.setHeight(destination)
+                        }) {
                             //update our tracker
                             self.enemyPaddlePosition = destination
-                        } else {
-                            return
-                        }
-                        
-                        //moves up (most of the time)
-                        if self.enemyPlayerWaiting { //^^
-                            let time = Double.random(min: 0.5, max: 1.5)
-                            delay(time) {
-                                if self.enemyPlayerWaiting {
-                                    let destination = paddleAtCenter + CGFloat.random(min: -10, max: 50)
-                                    self.animateWithDuration(time, animations: {
-                                        self.enemySpacer.setHeight(destination)
-                                    })
-                                    
-                                    self.enemyPaddlePosition = destination
-                                } else {
-                                    return
-                                }
-                                
-                                //begin cycle again (continues until we're not supposed to be waiting)
-                                shuffle()
+                            
+                            //shuffle in opposite direction
+                            if direction == Direction.Up {
+                                shuffle(Direction.Down)
+                            } else {
+                                shuffle(Direction.Up)
                             }
-                        } else {
-                            return
                         }
+                    } else {
+                        return
                     }
-                } else {
-                    return
                 }
+                
+                //begin shuffle
+                shuffle(Direction.Up)
             }
-            
-            //begin shuffle
-            shuffle()
         }
     }
     
@@ -281,10 +263,8 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         //animate to new point
         self.animateWithDuration(duration, animations: {
             self.enemySpacer.setHeight(destination)
-        })
-        
-        //update our position after animation
-        delay(duration) {
+        }) {
+            //update our position after animation
             self.enemyPaddlePosition = destination
         }
     }
@@ -349,5 +329,15 @@ public extension CGFloat {
     
     public static func random(min min: CGFloat, max: CGFloat) -> CGFloat {
         return CGFloat.random() * (max - min) + min
+    }
+}
+
+extension WKInterfaceController {
+    func animateWithDuration(duration: NSTimeInterval, animations: () -> Void, completion: (() -> Void)?) {
+        animateWithDuration(duration, animations: animations)
+        let completionDelay = dispatch_time(DISPATCH_TIME_NOW, Int64(duration * Double(NSEC_PER_SEC)))
+        dispatch_after(completionDelay, dispatch_get_main_queue()) {
+            completion?()
+        }
     }
 }
