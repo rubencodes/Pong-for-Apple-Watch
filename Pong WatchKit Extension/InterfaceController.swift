@@ -34,7 +34,8 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
     let BallHeight = 10 as CGFloat
     
     //size of 38mm canvas
-    let CanvasBounds = (top : 0 as CGFloat, left : 0 as CGFloat, bottom : 135 as CGFloat, right : 111 as CGFloat)
+//    let CanvasBounds = (top : 0 as CGFloat, left : 0 as CGFloat, bottom : 135 as CGFloat, right : 111 as CGFloat)
+    let CanvasBounds = (top : 0 as CGFloat, left : 0 as CGFloat, bottom : 162 as CGFloat, right : 130 as CGFloat)
     
     //is enemy paddle waiting?
     var enemyPlayerWaiting : Bool = false
@@ -63,10 +64,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         self.scroller.setItems(pickerItems)
         
         //start round with random ball direction
-        self.startRound(CGFloat.random(min: 1, max: 3))
-        
-        //start moving enemy player around
-        self.startEnemyPlayer()
+        self.startGame()
     }
     
     //moves paddle when the user scrolls digital crown
@@ -74,6 +72,14 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         //set paddle position to 1-100% of available space
         self.paddlePosition = (CGFloat(value)/100)*(CanvasBounds.bottom - PaddleHeight)
         self.spacer.setHeight(self.paddlePosition)
+    }
+    
+    func startGame() {
+        delay(1) {
+            self.resetBoard()
+            self.score = [Player.A : 0, Player.B : 0]
+            self.startRound(CGFloat.random(min: 1, max: 3))
+        }
     }
 
     //starts a round of pong
@@ -90,47 +96,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
             }
             //ball was missed, start new round or gameover
             else {
-                //play sound, reset the board
-                WKInterfaceDevice().playHaptic(WKHapticType.Failure)
-                self.resetBoard()
-                
-                //player A wins!
-                if self.score[Player.A] == 4 && self.playerTurn == Player.B {
-                    //present an alert, ask user to play again
-                    self.presentAlertControllerWithTitle("Whoops!", message: "Watch wins!", preferredStyle: WKAlertControllerStyle.ActionSheet, actions: [WKAlertAction(title: "Play Again", style: WKAlertActionStyle.Default, handler: {
-                        //reset the score, start new round
-                        delay(1) {
-                            self.score = [Player.A : 0, Player.B : 0]
-                            self.startRound(CGFloat.random(min: 1, max: 3))
-                        }
-                    })])
-                }
-                //player B wins!
-                else if self.score[Player.B] == 4 && self.playerTurn == Player.A {
-                    //present an alert, ask user to play again
-                    self.presentAlertControllerWithTitle("Cogratulations!", message: "You win!", preferredStyle: WKAlertControllerStyle.ActionSheet, actions: [WKAlertAction(title: "Play Again", style: WKAlertActionStyle.Default, handler: {
-                        //reset the score, start new round
-                        delay(1) {
-                            self.score = [Player.A : 0, Player.B : 0]
-                            self.startRound(CGFloat.random(min: 1, max: 3))
-                        }
-                    })])
-                }
-                //no one wins yet, start new round
-                else {
-                    if self.playerTurn == Player.A {
-                        //update score, show user interstitial alert
-                        self.score[Player.B] = self.score[Player.B]! + 1
-                        self.presentControllerWithName("AlertController", context: ["delegate" : self, "text" : "Point!\n\(self.score[Player.A]!)-\(self.score[Player.B]!)", "positive" : true])
-                    } else {
-                        //update score, show user interstitial alert
-                        self.score[Player.A] = self.score[Player.A]! + 1
-                        self.presentControllerWithName("AlertController", context: ["delegate" : self, "text" : "Ouch!\n\(self.score[Player.A]!)-\(self.score[Player.B]!)", "positive" : false])
-                    }
-                    
-                    //computer always starts round
-                    self.playerTurn = Player.A
-                }
+                self.handleLoss()
             }
         }
     }
@@ -204,6 +170,37 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         }
     }
     
+    //what we do when ball was not hit by player
+    func handleLoss() {
+        //play sound, reset the board
+        WKInterfaceDevice().playHaptic(WKHapticType.Failure)
+        
+        //player A wins!
+        if self.score[Player.A] == 4 && self.playerTurn == Player.B {
+            //present an alert, ask user to play again
+            self.presentAlertControllerWithTitle("Whoops!", message: "Watch wins!", preferredStyle: WKAlertControllerStyle.ActionSheet, actions: [WKAlertAction(title: "Play Again", style: WKAlertActionStyle.Default, handler: startGame)])
+        }
+            //player B wins!
+        else if self.score[Player.B] == 4 && self.playerTurn == Player.A {
+            //present an alert, ask user to play again
+            self.presentAlertControllerWithTitle("Cogratulations!", message: "You win!", preferredStyle: WKAlertControllerStyle.ActionSheet, actions: [WKAlertAction(title: "Play Again", style: WKAlertActionStyle.Default, handler: startGame)])
+        }
+            
+            //no one wins yet, start new round
+        else {
+            if self.playerTurn == Player.A {
+                //update score, show user interstitial alert
+                self.score[Player.B] = self.score[Player.B]! + 1
+                self.presentControllerWithName("AlertController", context: ["delegate" : self, "text" : "Point!\n\(self.score[Player.A]!)-\(self.score[Player.B]!)", "positive" : true])
+            } else {
+                //update score, show user interstitial alert
+                self.score[Player.A] = self.score[Player.A]! + 1
+                self.presentControllerWithName("AlertController", context: ["delegate" : self, "text" : "Ouch!\n\(self.score[Player.A]!)-\(self.score[Player.B]!)", "positive" : false])
+            }
+        }
+    }
+    
+    //not-very-smart enemy player; shuffles around center when waiting
     func startEnemyPlayer() {
         delay(0) {
             //first enemy paddle move to center
@@ -269,7 +266,7 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
         }
     }
     
-    //reset board state
+    //reset board state between rounds
     func resetBoard() {
         //reset all positions and locations to 0 (except user paddle position)
         self.enemyPlayerWaiting = false
@@ -284,6 +281,9 @@ class InterfaceController: WKInterfaceController, AlertControllerDelegate {
     //called when alert dismisses, starts new round after 1s delay
     func alertControllerWillDismiss() {
         dispatch_async(dispatch_get_main_queue()) {
+            self.resetBoard()
+            //computer always starts round
+            self.playerTurn = Player.A
             delay(1) {
                 self.startRound()
             }
